@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FPV 穿越机 Rate & PID 调参台</title>
+<style>
+  :root{--bg1:#0b0f17;--panel:#161d2b;--panel2:#1b2433;
+    --roll:#36c5f0;--pitch:#ff7a45;--yaw:#b07cff;--txt:#e8eef6;--mut:#7e8b9c;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Segoe UI',system-ui,sans-serif;color:var(--txt);
+    background:radial-gradient(1200px 600px at 20% -10%,#1c2840 0%,var(--bg1) 55%),var(--bg1);
+    padding:28px 20px;min-height:100vh;}
+  header{max-width:1100px;margin:0 auto 24px;}
+  h1{font-size:26px;font-weight:700;background:linear-gradient(90deg,#36c5f0,#b07cff);
+     -webkit-background-clip:text;background-clip:text;color:transparent;}
+  .sub{color:var(--mut);font-size:13.5px;margin-top:6px;}
+  .wrap{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:22px;}
+  @media(max-width:920px){.wrap{grid-template-columns:1fr;}}
+  .panel{background:linear-gradient(160deg,var(--panel) 0%,var(--panel2) 100%);
+    border-radius:16px;padding:20px;border:1px solid #222c3c;box-shadow:0 10px 30px rgba(0,0,0,.35);
+    transition:transform .2s,box-shadow .2s;}
+  .panel:hover{transform:translateY(-2px);box-shadow:0 16px 40px rgba(0,0,0,.45);}
+  .panel h2{font-size:16px;margin-bottom:16px;display:flex;align-items:center;gap:8px;font-weight:600;}
+  canvas{background:#0a0e16;border-radius:12px;width:100%;display:block;border:1px solid #1a2230;}
+  .legend{display:flex;gap:16px;margin:12px 0 4px;font-size:12px;flex-wrap:wrap;}
+  .legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle;}
+  .axis-sel{display:flex;gap:8px;margin-bottom:14px;}
+  .axis-sel button{flex:1;padding:9px;background:#1c2433;border:1px solid #283449;
+    color:var(--mut);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;}
+  .axis-sel button[data-axis=roll].on{background:rgba(54,197,240,.15);border-color:var(--roll);color:var(--roll);}
+  .axis-sel button[data-axis=pitch].on{background:rgba(255,122,69,.15);border-color:var(--pitch);color:var(--pitch);}
+  .axis-sel button[data-axis=yaw].on{background:rgba(176,124,255,.15);border-color:var(--yaw);color:var(--yaw);}
+  .ctrl{margin:14px 0;}
+  .ctrl label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;color:#c7d2e0;}
+  .ctrl label span{font-variant-numeric:tabular-nums;font-weight:700;}
+  .ctrl .desc{font-size:11.5px;color:#6b7888;margin-top:5px;line-height:1.5;}
+  input[type=range]{width:100%;height:6px;border-radius:4px;appearance:none;background:#28323f;outline:none;cursor:pointer;}
+  input[type=range]::-webkit-slider-thumb{appearance:none;width:16px;height:16px;border-radius:50%;
+    background:#fff;box-shadow:0 0 0 4px rgba(54,197,240,.25);cursor:pointer;}
+  .readout{background:#101623;border:1px solid #243043;border-radius:10px;padding:10px 14px;
+    margin:14px 0;display:flex;justify-content:space-between;align-items:center;font-size:13px;}
+  .readout b{font-size:15px;color:#7ee787;font-variant-numeric:tabular-nums;}
+  .readout small{color:var(--mut);}
+  .stats{display:flex;gap:16px;font-size:12px;color:var(--mut);margin-top:12px;flex-wrap:wrap;}
+  .stats b{color:var(--txt);font-size:14px;}
+  .export-area{width:100%;height:200px;background:#0a0e16;color:#7ee787;border:1px solid #222c3c;
+    border-radius:12px;padding:12px;font-family:'Consolas',monospace;font-size:12px;resize:vertical;line-height:1.5;}
+  .btn{padding:11px 18px;border:none;border-radius:10px;font-weight:600;cursor:pointer;margin-top:12px;margin-right:10px;transition:.15s;}
+  .btn.main{background:linear-gradient(90deg,#36c5f0,#2aa9d4);color:#04222e;}
+  .btn.main:hover{filter:brightness(1.1);}
+  .btn.alt{background:#232d3d;color:var(--txt);border:1px solid #2e3a4c;}
+  .full{max-width:1100px;margin:22px auto 0;}
+  /* 智能评价区 */
+  .eval-card{background:#101623;border-left:4px solid #36c5f0;border-radius:8px;padding:14px 16px;margin-top:14px;}
+  .eval-card h3{font-size:14px;margin-bottom:8px;color:#36c5f0;}
+  .eval-card p{font-size:13px;line-height:1.7;color:#c7d2e0;}
+  .tag{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;margin-right:8px;}
+  .tag.good{background:rgba(126,231,135,.15);color:#7ee787;}
+  .tag.warn{background:rgba(255,200,80,.15);color:#ffc850;}
+  .tag.bad{background:rgba(255,100,100,.15);color:#ff6464;}
+</style>
+</head>
+<body>
+<header>
+  <h1>🚁 FPV 穿越机 Rate & PID 调参台</h1>
+  <p class="sub">参数体系对齐 Betaflight 2025.12 · 含手感说明 · 智能评价 · 一键导出 CLI</p>
+</header>
+
+<div class="wrap">
+
+  <!-- Rate -->
+  <div class="panel">
+    <h2>📈 Rate 曲线（Betaflight Actual Rates）</h2>
+    <div class="axis-sel">
+      <button data-axis="roll" class="on">Roll</button>
+      <button data-axis="pitch">Pitch</button>
+      <button data-axis="yaw">Yaw</button>
+    </div>
+    <canvas id="rateCanvas" width="500" height="320"></canvas>
+    <div class="legend">
+      <span><i style="background:#36c5f0"></i>Roll</span>
+      <span><i style="background:#ff7a45"></i>Pitch</span>
+      <span><i style="background:#b07cff"></i>Yaw</span>
+    </div>
+    <div class="readout">
+      <span>Center-Max Sensitivity <small>（只读）</small></span>
+      <b><span id="centerOut">44</span> – <span id="maxOut">880</span> °/s</b>
+    </div>
+    <div class="ctrl">
+      <label>RC Rate <span id="rcRateV">0.22</span></label>
+      <input type="range" id="rcRate" min="0.01" max="2.55" step="0.01" value="0.22">
+      <div class="desc">📌 <b>中心区灵敏度</b>。决定摇杆小幅度时机头反应快慢。值越大，微操越灵敏、机头越"贼"；值越小，中心越柔和、利于稳定瞄准。</div>
+    </div>
+    <div class="ctrl">
+      <label>Rate <span id="rateV">0.95</span></label>
+      <input type="range" id="rate" min="0.00" max="2.55" step="0.01" value="0.95">
+      <div class="desc">📌 <b>满舵最大角速度</b>。决定打满杆时机体翻滚/俯仰的最高转速。值越大，翻滚越快越暴力；值越小，动作越温和可控。</div>
+    </div>
+    <div class="ctrl">
+      <label>RC Expo <span id="expoV">0.00</span></label>
+      <input type="range" id="expo" min="0.00" max="1.00" step="0.01" value="0.00">
+      <div class="desc">📌 <b>中心柔化曲率</b>。把中间段压平、两端保持灵敏。值越大，中心越"钝"、悬停瞄准越稳；值为 0 时全程线性。</div>
+    </div>
+  </div>
+
+  <!-- PID -->
+  <div class="panel">
+    <h2>🎯 PID 阶跃响应（0–1500ms）</h2>
+    <canvas id="pidCanvas" width="500" height="320"></canvas>
+    <div class="legend">
+      <span><i style="background:#7ee787"></i>响应曲线</span>
+      <span><i style="background:#ff7a45"></i>目标值</span>
+    </div>
+    <div class="stats">
+      <span>超调量：<b id="osOut">0</b>%</span>
+      <span>稳定时间：<b id="tsOut">0</b> ms</span>
+    </div>
+    <div class="ctrl">
+      <label>P (比例) <span id="kpV">45</span></label>
+      <input type="range" id="kp" min="0" max="255" step="1" value="45">
+      <div class="desc">📌 <b>响应刚性</b>。机体偏离目标时的纠正力度。P 高→反应锐利、抗风强，但过高会高频震荡（果冻、电机发烫）；P 低→飘、绵软。</div>
+    </div>
+    <div class="ctrl">
+      <label>I (积分) <span id="kiV">80</span></label>
+      <input type="range" id="ki" min="0" max="255" step="1" value="80">
+      <div class="desc">📌 <b>姿态保持力</b>。消除持续偏差、抗风抗下压。I 高→姿态锁得死、不漂移，但过高会低频摆动、出弯回弹；I 低→易被气流推走。</div>
+    </div>
+    <div class="ctrl">
+      <label>D (微分) <span id="kdV">35</span></label>
+      <input type="range" id="kd" min="0" max="255" step="1" value="35">
+      <div class="desc">📌 <b>阻尼刹车</b>。抑制 P 带来的超调与震荡。D 适中→落点干脆、无回弹；D 过高→放大噪声、电机过热；D 过低→超调明显、晃动。</div>
+    </div>
+  </div>
+</div>
+
+<!-- 智能评价 -->
+<div class="panel full">
+  <h2>🧠 综合智能评价</h2>
+  <p class="sub" style="margin-bottom:6px;">基于当前三轴 Rate + PID 参数的自动分析（实时更新）：</p>
+  <div id="evalBox"></div>
+</div>
+
+<!-- 导出 -->
+<div class="panel full">
+  <h2>📤 导出到 Betaflight 地面站 (CLI)</h2>
+  <p class="sub" style="margin-bottom:12px;">复制下方命令，粘贴到 BF Configurator 的 <b>CLI 命令行</b>，回车后输入 <code>save</code> 生效。</p>
+  <textarea id="exportArea" class="export-area" readonly></textarea>
+  <div>
+    <button class="btn main" onclick="copyCLI()">📋 复制 CLI 命令</button>
+    <button class="btn alt" onclick="downloadCLI()">💾 下载 .txt 配置文件</button>
+  </div>
+</div>
+
+<script>
+const axes = {
+  roll:  {rcRate:0.22, rate:0.95, expo:0.00, kp:45, ki:80, kd:35},
+  pitch: {rcRate:0.22, rate:0.95, expo:0.00, kp:47, ki:84, kd:40},
+  yaw:   {rcRate:0.22, rate:0.95, expo:0.00, kp:45, ki:80, kd:0},
+};
+const COLORS = {roll:'#36c5f0', pitch:'#ff7a45', yaw:'#b07cff'};
+const NAME = {roll:'Roll横滚', pitch:'Pitch俯仰', yaw:'Yaw偏航'};
+let curAxis = 'roll';
+
+const $ = id => document.getElementById(id);
+const sliders = ['rcRate','rate','expo','kp','ki','kd'];
+const floatSliders = ['rcRate','rate','expo'];
+
+function actualRate(x, rcRate, rate, expo){
+  const ax = Math.abs(x);
+  const expoCurve = expo*Math.pow(ax,3) + (1-expo)*ax;
+  const out = 200*rcRate*ax + 200*rate*expoCurve;
+  return out * Math.sign(x);
+}
+function centerMax(rcRate, rate, expo){
+  return [Math.round(200*rcRate), Math.round(200*rcRate + 200*rate)];
+}
+
+function drawRate(){
+  const cv=$('rateCanvas'),ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height,pad=38;
+  ctx.clearRect(0,0,W,H);
+  let scaleMax=100;
+  for(const k in axes) scaleMax=Math.max(scaleMax,centerMax(axes[k].rcRate,axes[k].rate,axes[k].expo)[1]);
+  ctx.strokeStyle='#1a2230';ctx.lineWidth=1;
+  for(let i=0;i<=10;i++){
+    const gx=pad+(W-2*pad)*i/10, gy=pad+(H-2*pad)*i/10;
+    ctx.beginPath();ctx.moveTo(gx,pad);ctx.lineTo(gx,H-pad);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(pad,gy);ctx.lineTo(W-pad,gy);ctx.stroke();
+  }
+  ctx.strokeStyle='#33415a';
+  ctx.beginPath();ctx.moveTo(W/2,pad);ctx.lineTo(W/2,H-pad);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(pad,H/2);ctx.lineTo(W-pad,H/2);ctx.stroke();
+  const order=Object.keys(axes).filter(k=>k!==curAxis).concat([curAxis]);
+  order.forEach(axis=>{
+    const a=axes[axis],isCur=axis===curAxis;
+    ctx.strokeStyle=COLORS[axis];ctx.globalAlpha=isCur?1:0.35;ctx.lineWidth=isCur?3:1.6;
+    ctx.beginPath();
+    for(let px=pad;px<=W-pad;px++){
+      const x=((px-pad)/(W-2*pad))*2-1;
+      const out=actualRate(x,a.rcRate,a.rate,a.expo);
+      const py=H/2-(out/scaleMax)*(H/2-pad);
+      px===pad?ctx.moveTo(px,py):ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+  });
+  ctx.globalAlpha=1;
+  ctx.fillStyle='#7e8b9c';ctx.font='11px sans-serif';
+  ctx.fillText('+'+Math.round(scaleMax)+'°/s',pad+4,pad+12);
+  ctx.fillText('-'+Math.round(scaleMax)+'°/s',pad+4,H-pad-4);
+  ctx.fillText('摇杆 →',W-pad-48,H/2-6);
+  const a=axes[curAxis],[c,m]=centerMax(a.rcRate,a.rate,a.expo);
+  $('centerOut').textContent=c; $('maxOut').textContent=m;
+}
+
+function simulatePID(a){
+  const Kp=a.kp*0.35,Ki=a.ki*0.7,Kd=a.kd*0.15;
+  const dt=0.001,N=1500;
+  let pos=0,vel=0,integ=0,prevErr=1;
+  const J=1.0,damp=1.5;
+  const pts=[];let peak=0,settled=N;
+  for(let i=0;i<N;i++){
+    const err=1-pos;
+    integ+=err*dt;integ=Math.max(-50,Math.min(50,integ));
+    const deriv=(err-prevErr)/dt;prevErr=err;
+    const u=Kp*err+Ki*integ+Kd*deriv;
+    vel+=((u-damp*vel)/J)*dt;pos+=vel*dt;
+    pts.push(pos);
+    if(pos>peak)peak=pos;
+    if(Math.abs(pos-1)<0.02){if(settled===N)settled=i;}else settled=N;
+  }
+  return {pts,N,dt,overshoot:Math.max(0,(peak-1)*100),settle:settled>=N?-1:settled*dt*1000};
+}
+
+function drawPID(){
+  const a=axes[curAxis];
+  const cv=$('pidCanvas'),ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height,pad=38;
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#1a2230';
+  for(let i=0;i<=10;i++){
+    const gx=pad+(W-2*pad)*i/10, gy=pad+(H-2*pad)*i/10;
+    ctx.beginPath();ctx.moveTo(gx,pad);ctx.lineTo(gx,H-pad);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(pad,gy);ctx.lineTo(W-pad,gy);ctx.stroke();
+  }
+  const yMin=-0.2,yMax=1.8,toY=v=>pad+(H-2*pad)*(yMax-v)/(yMax-yMin);
+  ctx.strokeStyle='#ff7a45';ctx.setLineDash([5,4]);
+  ctx.beginPath();ctx.moveTo(pad,toY(1));ctx.lineTo(W-pad,toY(1));ctx.stroke();
+  ctx.setLineDash([]);
+  const sim=simulatePID(a);
+  ctx.strokeStyle='#7ee787';ctx.lineWidth=2.5;ctx.beginPath();
+  for(let i=0;i<sim.N;i++){
+    const px=pad+(W-2*pad)*i/sim.N;
+    let py=toY(sim.pts[i]);py=Math.max(pad,Math.min(H-pad,py));
+    i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+  }
+  ctx.stroke();
+  ctx.fillStyle='#7e8b9c';ctx.font='11px sans-serif';
+  ctx.fillText('目标值 1.0',pad+4,toY(1)-5);
+  ctx.fillText('1500ms →',W-pad-58,H-pad-4);
+  ctx.fillText('0',pad-14,toY(0)+4);
+  $('osOut').textContent=sim.overshoot.toFixed(1);
+  $('tsOut').textContent=sim.settle<0?'未收敛':Math.round(sim.settle);
+}
+
+// ===== 智能评价引擎 =====
+function buildEval(){
+  let html='';
+  for(const axis of ['roll','pitch','yaw']){
+    const a=axes[axis];
+    const [c,m]=centerMax(a.rcRate,a.rate,a.expo);
+    const sim=simulatePID(a);
+    const tags=[],notes=[];
+
+    // Rate 评价
+    if(m>1000){tags.push(['bad','满舵过暴']);notes.push(`满舵 ${m}°/s 偏高，新手易失控，适合竞速老手`);}
+    else if(m<400){tags.push(['warn','满舵偏低']);notes.push(`满舵 ${m}°/s 较温和，翻滚偏慢`);}
+    else{tags.push(['good','满舵适中']);notes.push(`满舵 ${m}°/s 处于通用区间`);}
+
+    if(c>80){tags.push(['warn','中心偏贼']);notes.push(`中心灵敏度 ${c}°/s 偏高，微操略冲`);}
+    else{notes.push(`中心灵敏度 ${c}°/s 利于稳定瞄准`);}
+
+    if(a.expo>0.6){notes.push(`Expo ${a.expo.toFixed(2)} 较大，中心很柔和`);}
+    else if(a.expo<0.05){notes.push(`Expo 接近 0，全程线性、无柔化`);}
+
+    // PID 评价
+    if(sim.overshoot>25){tags.push(['bad','超调过大']);notes.push(`超调 ${sim.overshoot.toFixed(0)}%，建议加 D 或降 P`);}
+    else if(sim.overshoot>10){tags.push(['warn','轻微超调']);notes.push(`超调 ${sim.overshoot.toFixed(0)}%，可微增 D`);}
+    else{tags.push(['good','超调可控']);notes.push(`超调 ${sim.overshoot.toFixed(0)}%，落点干脆`);}
+
+    if(sim.settle<0){tags.push(['bad','未收敛']);notes.push(`1500ms 内未稳定，P/I 配比失衡`);}
+    else if(sim.settle>800){tags.push(['warn','收敛偏慢']);notes.push(`稳定耗时 ${Math.round(sim.settle)}ms，响应偏肉`);}
+    else{notes.push(`稳定耗时 ${Math.round(sim.settle)}ms，响应跟手`);}
+
+    if(axis!=='yaw' && a.kd===0){tags.push(['bad','无D阻尼']);notes.push(`D=0 会导致明显超调震荡`);}
+
+    const tagHtml=tags.map(t=>`<span class="tag ${t[0]}">${t[1]}</span>`).join('');
+    html+=`<div class="eval-card" style="border-left-color:${COLORS[axis]}">
+      <h3>${NAME[axis]}　<span style="font-weight:400;color:#7e8b9c">P${a.kp} I${a.ki} D${a.kd} · ${c}-${m}°/s</span></h3>
+      <p>${tagHtml}</p>
+      <p>${notes.join('；')}。</p>
+    </div>`;
+  }
+
+  // 总体结论
+  let bad=0,warn=0;
+  for(const axis of ['roll','pitch','yaw']){
+    const sim=simulatePID(axes[axis]);
+    if(sim.overshoot>25||sim.settle<0) bad++;
+    else if(sim.overshoot>10||sim.settle>800) warn++;
+  }
+  let verdict,vClass;
+  if(bad>0){verdict='⚠️ 存在明显问题轴，建议优先处理超调/收敛，再上机试飞。';vClass='bad';}
+  else if(warn>0){verdict='🟡 整体可飞，部分轴偏保守或略有超调，微调后手感更佳。';vClass='warn';}
+  else{verdict='✅ 三轴参数均衡，超调可控、收敛迅速，是一套适合实飞的健康配置。';vClass='good';}
+  html+=`<div class="eval-card" style="border-left-color:#fff;background:#0d1420">
+    <h3 style="color:#fff">📋 总体结论</h3>
+    <p><span class="tag ${vClass}">综合评级</span>${verdict}</p>
+    <p style="color:#7e8b9c;margin-top:6px">💡 调参铁律：先用 Rate 调出顺手的转速手感，再用 PID 治理超调与震荡；P 定刚性、D 压超调、I 锁姿态，三者平衡才是好飞控。</p>
+  </div>`;
+  $('evalBox').innerHTML=html;
+}
+
+function buildCLI(){
+  const r=axes.roll,p=axes.pitch,y=axes.yaw;
+  const f=v=>v.toFixed(0),fc=v=>v.toFixed(2);
+  return `# Betaflight Rate & PID 配置（由调参台生成）
+rateprofile 0
+set roll_rc_rate = ${fc(r.rcRate)}
+set pitch_rc_rate = ${fc(p.rcRate)}
+set yaw_rc_rate = ${fc(y.rcRate)}
+set roll_srate = ${fc(r.rate)}
+set pitch_srate = ${fc(p.rate)}
+set yaw_srate = ${fc(y.rate)}
+set roll_expo = ${fc(r.expo)}
+set pitch_expo = ${fc(p.expo)}
+set yaw_expo = ${fc(y.expo)}
+
+profile 0
+set p_roll = ${f(r.kp)}
+set i_roll = ${f(r.ki)}
+set d_roll = ${f(r.kd)}
+set p_pitch = ${f(p.kp)}
+set i_pitch = ${f(p.ki)}
+set d_pitch = ${f(p.kd)}
+set p_yaw = ${f(y.kp)}
+set i_yaw = ${f(y.ki)}
+set d_yaw = ${f(y.kd)}
+save`;
+}
+function refreshExport(){ $('exportArea').value=buildCLI(); }
+function copyCLI(){ navigator.clipboard.writeText(buildCLI()).then(()=>alert('✅ CLI 命令已复制，粘贴到 BF 地面站即可')); }
+function downloadCLI(){
+  const blob=new Blob([buildCLI()],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download='bf_config.txt';a.click();
+}
+
+function fmt(id,v){ return floatSliders.includes(id)?v.toFixed(2):Math.round(v); }
+function loadAxis(){
+  const a=axes[curAxis];
+  sliders.forEach(id=>{ $(id).value=a[id]; $(id+'V').textContent=fmt(id,a[id]); });
+}
+function redraw(){ drawRate(); drawPID(); buildEval(); refreshExport(); }
+
+// 关键修复：同时监听 input 与 change，确保边界值也能触发
+sliders.forEach(id=>{
+  const handler=e=>{
+    const v=floatSliders.includes(id)?parseFloat(e.target.value):parseInt(e.target.value);
+    axes[curAxis][id]=v;
+    $(id+'V').textContent=fmt(id,v);
+    redraw();
+  };
+  $(id).addEventListener('input',handler);
+  $(id).addEventListener('change',handler);
+});
+document.querySelectorAll('.axis-sel button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.axis-sel button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');curAxis=b.dataset.axis;loadAxis();redraw();
+  });
+});
+loadAxis();redraw();
+</script>
+</body>
+</html>
